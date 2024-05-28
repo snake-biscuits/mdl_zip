@@ -114,38 +114,47 @@ def split_model_path(path: str) -> str:
     return game_dir, model_path
 
 
-def package(model_path: str, mod_name: str = "custom_mod"):
-    """grab a model & package it up with all it's materials"""
+def collect_files(model_path: str) -> (str, List[str]):
     # NOTE: will fail to complete if not all files can be found!
     print("loading .mdl ...")
     mdl = MDL.from_file(model_path)
     print(f"loaded {mdl}")
     game_dir, model_path = split_model_path(model_path)
-    copy_list = [model_path]
-    copy_list.extend(vmt + ".vmt" for vmt in mdl.materials)
+    file_list = [model_path]
+    file_list.extend(vmt + ".vmt" for vmt in mdl.materials)
     print("parsing .vmts ...")
     vmts = [
         VMT.from_file(os.path.join(game_dir, vmt) + ".vmt")
         for vmt in mdl.materials]
     print(f"collecting {sum(len(vmt.textures) for vmt in vmts)} .vtfs ...")
-    copy_list.extend(
+    file_list.extend(
         os.path.join("materials", vtf) + ".vtf"
         for vmt in vmts
         for vtf in vmt.textures)
-    print("found all files!")
+    print("found all files for this .mdl!")
+    return (game_dir, file_list)
+
+
+def package(*model_paths: str, mod_name: str = "custom_mod"):
+    """package up a bunch of models into one .zip"""
     print(f"creating {mod_name}.zip ...")
+    zip_contents = list()
     with zipfile.ZipFile(f"{mod_name}.zip", "w") as zip_file:
-        for file_path in copy_list:
-            zip_file.write(
-                os.path.join(game_dir, file_path),  # full file path
-                os.path.join(mod_name, file_path))  # path in .zip
+        for game_dir, copy_list in map(collect_files, model_paths):
+            for file_path in copy_list:
+                zip_path = os.path.join(mod_name, file_path).replace("\\", "/")
+                if zip_path not in zip_contents:
+                    zip_file.write(
+                        os.path.join(game_dir, file_path),  # full file path
+                        os.path.join(mod_name, file_path))  # path in .zip
+                    zip_contents.append(zip_path)
     print("Finished!")
 
 
 if __name__ == "__main__":
     import sys
     if len(sys.argv) < 2:
-        print(f"USAGE: {sys.argv[0]} steam/.../models/.../model.mdl")
+        print(f"USAGE: {sys.argv[0]} steam/.../models/.../model.mdl ...")
     else:
-        package(sys.argv[1])
+        package(*sys.argv[1:])
     input("Press ENTER to close this window.")
