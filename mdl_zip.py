@@ -116,6 +116,8 @@ def split_model_path(path: str) -> str:
 
 def collect_files(model_path: str) -> (str, List[str]):
     # NOTE: will fail to complete if not all files can be found!
+    # TODO: skip and log any files that can't be found
+    # NOTE: can't check for other mount points to gather materials
     print("loading .mdl ...")
     mdl = MDL.from_file(model_path)
     print(f"loaded {mdl}")
@@ -156,5 +158,8 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print(f"USAGE: {sys.argv[0]} steam/.../models/.../model.mdl ...")
     else:
-        package(*sys.argv[1:])
+        try:
+            package(*sys.argv[1:])
+        except Exception:
+            print("!!! Something broke! Find a programmer!")
     input("Press ENTER to close this window.")
