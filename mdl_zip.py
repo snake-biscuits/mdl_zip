@@ -26,24 +26,26 @@ def read_string(file, offset: int = None) -> str:
 
 class MDL:
     """https://developer.valvesoftware.com/wiki/MDL_(Source)"""
-    filename: str
+    filepath: str  # relative to game_dir/
     materials: List[str]
 
-    def __init__(self, filename: str):
-        self.filename = filename
+    def __init__(self, filepath: str = ""):
+        self.filepath = filepath
         self.materials = list()
 
     def __repr__(self) -> str:
-        return f"<MDL '{self.filename}' {len(self.materials)} materials @ 0x{id(self):016X}>"
+        return f"<MDL '{self.filepath}' {len(self.materials)} materials @ 0x{id(self):016X}>"
 
     @classmethod
     def from_file(cls, path: str) -> MDL:
-        out = cls(path)
+        out = cls()
         with open(path, "rb") as mdl_file:
             assert mdl_file.read(4) == b"IDST", f"'{path}' is not a valid .mdl file"
             version = read_struct(mdl_file, "I")
             if not (48 <= version <= 52):  # TF2 -> Titanfall
                 raise NotImplementedError(f".mdl v{version} not supported")
+            mdl_file.seek(0x0C)  # offsetof(studiohdr_t, name)
+            out.filepath = mdl_file.read(64).partition(b"\x00")[0].decode()
             # skip through the header to textures
             mdl_file.seek(0xCC)  # offsetof(studiohdr_t, num_textures)
             texture_count, texture_offset = read_struct(mdl_file, "2I")
@@ -74,7 +76,7 @@ class MDL:
 
 class VMT:
     """https://developer.valvesoftware.com/wiki/VMT"""
-    filename: str
+    filepath: str
     textures: List[str]
 
     # NOTE: assuming basetexture2 & blendmodulate aren't in .mdl .vmts
@@ -84,12 +86,12 @@ class VMT:
         "$bumpmap",
         "%tooltexture"]
 
-    def __init__(self, filename: str):
-        self.filename = filename
+    def __init__(self, filepath: str = ""):
+        self.filepath = filepath
         self.textures = list()
 
     def __repr__(self) -> str:
-        return f"<VMT '{self.filename}' {len(self.textures)} textures @ 0x{id(self):016X}>"
+        return f"<VMT '{self.filepath}' {len(self.textures)} textures @ 0x{id(self):016X}>"
 
     @classmethod
     def from_file(cls, path: str) -> VMT:
@@ -104,13 +106,15 @@ class VMT:
         return out
 
 
-def split_model_path(path: str) -> str:
+def split_model_path(model_path: str, mdl: MDL) -> str:
     """get the game folder from a model path"""
-    path = path.replace("\\", "/").split("/")
-    assert "models" in path, "model_path is not a valid mounted folder"
-    models_index = path.index("models")
-    game_dir = "/".join(path[:models_index])
-    model_path = "/".join(path[models_index:])
+    model_path = os.path.abspath(model_path)
+    full_path = model_path.replace("\\", "/").split("/")
+    mdl_path = mdl.filepath.replace("\\", "/").split("/")
+    models_index = -(len(mdl_path) + 1)  # +1 to include models/
+    assert full_path[-len(mdl_path):] == mdl_path, "case sensitivity error?"
+    game_dir = "/".join(full_path[:models_index])
+    model_path = "/".join(full_path[models_index:])
     return game_dir, model_path
 
 
@@ -121,7 +125,7 @@ def collect_files(model_path: str) -> (str, List[str]):
     print("loading .mdl ...")
     mdl = MDL.from_file(model_path)
     print(f"loaded {mdl}")
-    game_dir, model_path = split_model_path(model_path)
+    game_dir, model_path = split_model_path(model_path, mdl)
     file_list = [model_path]
     file_list.extend(vmt + ".vmt" for vmt in mdl.materials)
     print("parsing .vmts ...")
